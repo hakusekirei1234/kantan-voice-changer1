@@ -1,0 +1,202 @@
+簡単ボイチェン — 使用しているソフトウェアの著作権表示
+====================================================
+
+■ 本ソフトウェアのライセンス
+
+  簡単ボイチェン (Kantan Voice Changer)
+  Copyright (C) 2026  ★博石玲★
+
+  本プログラムはフリーソフトウェアです。フリーソフトウェア財団が公表した
+  GNU Affero 一般公衆利用許諾書 バージョン3 または（任意で）それ以降の
+  バージョンの条項に従って、再頒布および改変することができます。
+
+  本プログラムは有用であることを願って頒布されますが、*全くの無保証* です。
+  商業可能性や特定目的適合性の保証すらありません。
+  詳しくは GNU Affero 一般公衆利用許諾書をご覧ください。
+
+  同梱の LICENSE.txt に完全な条文があります。
+  無い場合は <https://www.gnu.org/licenses/> をご覧ください。
+
+  ソースコード： ★https://github.com/hakusekirei1234/kantan-voice-changer1★
+
+
+■ 含まれる第三者ソフトウェア
+
+以下の第三者ソフトウェアが含まれています。
+それぞれの著作権者と使用許諾条件を以下に示します。
+
+（本ファイルは実行ファイルと同じフォルダに置いて配布してください）
+
+
+--------------------------------------------------------------------
+1. JUCE Framework
+--------------------------------------------------------------------
+Copyright (c) Raw Material Software Limited
+
+JUCE 8 のモジュールは AGPLv3 と商用 JUCE ライセンスのデュアルライセンスです。
+本ソフトウェアは【AGPLv3】に基づいて JUCE を使用しています。
+（本ソフトウェア自体も AGPLv3 で公開し、ソースコードを公開しています）
+
+  AGPLv3            https://www.gnu.org/licenses/agpl-3.0.en.html
+  JUCE 8 ライセンス  https://juce.com/legal/juce-8-licence/
+  公式サイト         https://juce.com
+
+なお JUCE 8 にスプラッシュ画面の仕組みは存在しません
+（JUCE 側で廃止済み。表示義務はありません）。
+
+
+--------------------------------------------------------------------
+2. VST3 SDK  （プラグイン読み込み機能で使用）
+--------------------------------------------------------------------
+MIT License
+Copyright (c) 2025, Steinberg Media Technologies GmbH
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+VST is a trademark of Steinberg Media Technologies GmbH,
+registered in Europe and other countries.
+
+
+--------------------------------------------------------------------
+3. Steinberg ASIO SDK  （ASIO 対応ビルドのみ）
+--------------------------------------------------------------------
+(c) 2025, Steinberg Media Technologies GmbH, All Rights Reserved
+
+ASIO SDK は「Steinberg ASIO ライセンス」または「GPL Version 3」の
+いずれかを選択して使用できます。
+
+  ・専有ライセンスで公開する場合は、事前に Steinberg 社が署名した
+    ライセンス同意書を取得する必要があります。
+    https://www.steinberg.net/developers/
+  ・GPLv3 で公開する場合は同意書は不要です。
+
+本ソフトウェアは【GPL Version 3】を選択して ASIO SDK を使用しています。
+したがって Steinberg 社の署名入り同意書は不要です。
+
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+
+
+--------------------------------------------------------------------
+4. HarfBuzz  （文字組版。JUCE の juce_graphics 経由）
+--------------------------------------------------------------------
+Copyright (C) 2010-2022 Google, Inc.
+Copyright (C) 2015-2020 Ebrahim Byagowi
+Copyright (C) 2019,2020 Facebook, Inc.
+Copyright (C) 2012,2015 Mozilla Foundation
+Copyright (C) 2011 Codethink Limited
+Copyright (C) 2008,2010 Nokia Corporation and/or its subsidiary(-ies)
+Copyright (C) 2009 Keith Stribley
+Copyright (C) 2011 Martin Hosken and SIL International
+Copyright (C) 2007 Chris Wilson
+Copyright (C) 2005,2006,2020,2021,2022,2023 Behdad Esfahbod
+Copyright (C) 2004,2007,2008,2009,2010,2013 Red Hat, Inc.
+Copyright (C) 1998-2005 David Turner and Werner Lemberg
+Copyright (C) 2016 Igalia S.L.
+Copyright (C) 2022 Matthias Clasen
+Copyright (C) 2018,2021 Khaled Hosny
+Copyright (C) 2018,2019,2020 Adobe, Inc
+Copyright (C) 2013-2015 Alexei Podtelezhnikov
+
+"Old MIT" license — 完全な条文は JUCE の
+modules/juce_graphics/fonts/harfbuzz/COPYING を参照してください。
+
+Permission is hereby granted, without written agreement and without license or
+royalty fees, to use, copy, modify, and distribute this software and its
+documentation for any purpose, provided that the above copyright notice and
+the following two paragraphs appear in all copies of this software.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE TO ANY PARTY FOR DIRECT,
+INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE
+OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE COPYRIGHT HOLDER HAS BEEN
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+THE COPYRIGHT HOLDER SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE. THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" BASIS, AND
+THE COPYRIGHT HOLDER HAS NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT,
+UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+
+
+--------------------------------------------------------------------
+5. SheenBidi  （双方向テキスト処理。juce_graphics 経由）
+--------------------------------------------------------------------
+Copyright (C) 2014-2025 Muhammad Tayyab Akram
+
+Licensed under the Apache License, Version 2.0
+https://www.apache.org/licenses/LICENSE-2.0
+
+
+--------------------------------------------------------------------
+6. zlib  （juce_core 経由）
+--------------------------------------------------------------------
+Copyright (C) 1995-2017 Jean-loup Gailly and Mark Adler
+
+This software is provided 'as-is', without any express or implied warranty.
+In no event will the authors be held liable for any damages arising from the
+use of this software. Permission is granted to anyone to use this software for
+any purpose, including commercial applications, and to alter it and
+redistribute it freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim
+   that you wrote the original software.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+
+
+--------------------------------------------------------------------
+7. libpng  （画像デコード。juce_graphics 経由）
+--------------------------------------------------------------------
+Copyright (c) 1995-2024 The PNG Reference Library Authors
+Licensed under the PNG Reference Library License (zlib 系)
+
+
+--------------------------------------------------------------------
+8. Independent JPEG Group's JPEG software  （juce_graphics 経由）
+--------------------------------------------------------------------
+Copyright (C) 1991-2020, Thomas G. Lane, Guido Vollbeding
+
+This software is based in part on the work of the Independent JPEG Group.
+
+
+--------------------------------------------------------------------
+含まれていないもの（参考）
+--------------------------------------------------------------------
+以下は JUCE に同梱されていますが、本ソフトウェアではビルド時に無効化しており
+実行ファイルには含まれていません。
+
+  FLAC / Ogg Vorbis    ... JUCE_USE_FLAC=0, JUCE_USE_OGGVORBIS=0
+  LV2 / AAX / AudioUnit ... 使用していません
+  Oboe (Android)        ... Windows 専用のため不使用
+  Box2D / OpenGL / QuickJS ... 該当モジュールを未リンク
+
+
+--------------------------------------------------------------------
+その他
+--------------------------------------------------------------------
+・MP3 の書き出しは Windows 標準の Media Foundation を使用しています。
+  第三者のエンコーダは同梱していません。MP3 に関する特許は 2017 年に
+  すべて失効しています。
+
+・本ソフトウェアはインターネット通信を一切行いません。
+  通信系のシステム DLL もインポートしていません。
+
+・Pitchproof / Graillon / élastique などのプラグインは同梱していません。
+  利用者が各自でインストールする必要があり、それぞれの提供元の
+  使用許諾に従ってください。
