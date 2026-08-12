@@ -1,6 +1,11 @@
 # 簡単ボイチェン
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 Windows 11 向けのリアルタイムボイスチェンジャー（スタンドアロン exe）。
+
+**ライセンス: GNU AGPL v3 or later**（全文は [LICENSE.txt](LICENSE.txt)）
+第三者ソフトウェアの著作権表示は [dist/THIRD-PARTY-NOTICES.txt](dist/THIRD-PARTY-NOTICES.txt) にあります。
 
 - **外部プラグイン（VST3 / VST2）をホストできる** — Pitchproof / Graillon 2 / élastique Pitch などを
   DAW なしで使える。内蔵の音質に不満があればこちらへ切り替える
