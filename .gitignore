@@ -1,0 +1,32 @@
+# ビルド生成物
+build/
+build_ascii/
+_toolchain_test/build*/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.dll
+
+# 配布物（リリースは GitHub Releases / BOOTH に置く）
+dist/
+測定記録/
+
+# JUCE 本体（各自で取得する。README のビルド手順を参照）
+external/JUCE/
+
+# エディタ・OS
+.vs/
+.vscode/
+.idea/
+*.user
+Thumbs.db
+desktop.ini
+
+# Synology Drive
+@eaDir/
+.DS_Store
+
+# ローカルのツール設定
+.claude/
