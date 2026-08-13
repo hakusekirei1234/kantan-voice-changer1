@@ -4,7 +4,7 @@
 ■ 本ソフトウェアのライセンス
 
   簡単ボイチェン (Kantan Voice Changer)
-  Copyright (C) 2026  ★博石玲★
+  Copyright (C) 2026  博石玲
 
   本プログラムはフリーソフトウェアです。フリーソフトウェア財団が公表した
   GNU Affero 一般公衆利用許諾書 バージョン3 または（任意で）それ以降の
@@ -17,7 +17,7 @@
   同梱の LICENSE.txt に完全な条文があります。
   無い場合は <https://www.gnu.org/licenses/> をご覧ください。
 
-  ソースコード： ★https://github.com/hakusekirei1234/kantan-voice-changer1★
+  ソースコード： https://github.com/hakusekirei1234/kantan-voice-changer1
 
 
 ■ 含まれる第三者ソフトウェア

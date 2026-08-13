@@ -9,8 +9,9 @@ _toolchain_test/build*/
 *.lib
 *.dll
 
-# 配布物（リリースは GitHub Releases / BOOTH に置く）
-# dist/
+# 配布物。テキスト類は追跡するが、固めた ZIP はリポジトリに入れない
+# （リリースは GitHub Releases / BOOTH に置く）
+dist/*.zip
 測定記録/
 
 # JUCE 本体（各自で取得する。README のビルド手順を参照）

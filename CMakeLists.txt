@@ -19,7 +19,7 @@ cmake_minimum_required(VERSION 3.25)
 
 # LANGUAGES C CXX is mandatory: JUCE requires a C compiler, CXX alone fails configure.
 project(KantanVoiceChanger
-        VERSION 1.0.0
+        VERSION 1.0.1
         LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -259,3 +259,51 @@ target_link_libraries(KantanVoiceChanger PRIVATE delayimp)
 
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
              PROPERTY VS_STARTUP_PROJECT KantanVoiceChanger)
+
+# -----------------------------------------------------------------------------
+# Tests.
+#
+# A console app, not a GUI one: CI has no window station and no audio device.
+# It links kvc_core only - nothing here touches juce_audio_devices, so the tests
+# run identically on a headless runner and on the developer's machine.
+#
+#   cmake -S . -B build -DKVC_BUILD_TESTS=ON
+#   cmake --build build --config Release --target kvc_tests --parallel 6
+#   ctest --test-dir build -C Release --output-on-failure
+# -----------------------------------------------------------------------------
+option(KVC_BUILD_TESTS "Build the DSP test runner (console app)." OFF)
+
+if(KVC_BUILD_TESTS)
+    enable_testing()
+
+    juce_add_console_app(kvc_tests
+        PRODUCT_NAME "kvc_tests"
+        VERSION      ${PROJECT_VERSION})
+
+    target_sources(kvc_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestMain.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestSupport.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/PitchFormantShifterTests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/PitchTrackerTests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/VoiceEngineTests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/NoiseSuppressorTests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/DriftRingTests.cpp)
+
+    target_include_directories(kvc_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+
+    target_compile_definitions(kvc_tests PRIVATE
+        KVC_VERSION_STRING="${PROJECT_VERSION}")
+
+    target_link_libraries(kvc_tests PRIVATE
+        kvc_core
+        kvc_config
+        juce::juce_audio_basics
+        juce::juce_dsp
+      PRIVATE
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+
+    add_test(NAME kvc_dsp_tests COMMAND kvc_tests)
+endif()

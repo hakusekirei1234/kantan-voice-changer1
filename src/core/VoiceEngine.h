@@ -79,8 +79,8 @@ private:
     デバイスも juce::AudioProcessor も一切知らない純粋クラス。
     後から VST3 化するときと、WAV in / WAV out のオフラインテストのため。
 
-    遅延はノイズ除去の N + PSOLA の 512 で固定。パラメータやバイパスで変わらない。
-    既定（N=256）で 768 サンプル = 16.0 ms。
+    遅延はノイズ除去の N + PSOLA の 768 で固定。パラメータやバイパスで変わらない。
+    既定（N=256）で 1024 サンプル = 21.3 ms。
 
     ★ミュートとビープはここには無い。
       ミュートは送信バスへの書き込み側で、ビープはモニターバス側で、それぞれ
@@ -90,6 +90,12 @@ private:
       prepare / reset ... メッセージスレッド専用（確保する）
       process         ... オーディオスレッド専用。先頭で ScopedNoDenormals を張ること。
 */
+// PSOLA の先読みは 2 か所に書かれている（片方はシフタの内部定数、片方は
+// 遅延計算用の公開定数）。ずれると送信/モニターの遅延補正が静かに嘘をつくので、
+// ここでコンパイル時に固定する。
+static_assert (kPsolaLookaheadSamples == PitchFormantShifter::kLookaheadSamples,
+               "kPsolaLookaheadSamples must match PitchFormantShifter::kLookaheadSamples");
+
 class VoiceEngine
 {
 public:

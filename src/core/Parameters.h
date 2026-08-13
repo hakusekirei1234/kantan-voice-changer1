@@ -21,8 +21,10 @@ namespace kvc
 inline constexpr double kPreferredSampleRate = 48000.0;
 
 /** PSOLA の先読み。設定値・バイパス・ピッチ量に関わらず常にこの値。
-    可変にすると送信/モニターの遅延補正が切替のたびにずれてプチッと鳴る。 */
-inline constexpr int kPsolaLookaheadSamples = 512;
+    可変にすると送信/モニターの遅延補正が切替のたびにずれてプチッと鳴る。
+    ★PitchFormantShifter::kLookaheadSamples と必ず一致させること
+      （VoiceEngine.h に static_assert がある）。 */
+inline constexpr int kPsolaLookaheadSamples = 768;
 
 /** ノイズ除去の STFT サイズ（= そのままアルゴリズム遅延サンプル数）。 */
 inline constexpr int kNoiseFftLowLatency = 256;   // HOP 64,  5.33 ms（既定）
@@ -58,7 +60,7 @@ inline int hopSizeForQuality (NoiseQuality q) noexcept
 /** DSP チェーン全体のアルゴリズム遅延。デバイスバッファは含まない。 */
 inline int dspLatencySamples (NoiseQuality q) noexcept
 {
-    return kPsolaLookaheadSamples + fftSizeForQuality (q);   // 既定: 512 + 256 = 768
+    return kPsolaLookaheadSamples + fftSizeForQuality (q);   // 既定: 768 + 256 = 1024
 }
 
 //==============================================================================

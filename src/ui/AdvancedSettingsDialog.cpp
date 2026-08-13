@@ -17,7 +17,7 @@ namespace
 }
 
 #ifndef KVC_VERSION_STRING
- #define KVC_VERSION_STRING "1.0.0"
+ #define KVC_VERSION_STRING "1.0.1"
 #endif
 
 #ifndef KVC_ASIO_ENABLED

@@ -126,7 +126,7 @@ public:
 
         LegStatus input, monitor, send;
 
-        int    dspLatencySamples = 0;   ///< 768（既定）。実行中は不変。
+        int    dspLatencySamples = 0;   ///< 1024（内蔵エンジンの既定）。実行中は不変。
         int    monitorTotalLatencySamples = 0;
         double monitorTotalLatencyMs = 0.0;
         bool   latencyIsEstimate = false;   ///< 仮想デバイスが嘘の値を返した等

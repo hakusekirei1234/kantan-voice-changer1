@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# 簡単ボイチェン の継続的インテグレーション。
+#
+# ここで守りたいのは 2 点だけ:
+#   1. DSP のテストが通ること（ピッチが動く / 遅延が動かない / 落ちない）
+#   2. 配布するのと同じ設定で exe がビルドできること
+#
+# ランナーには音声デバイスもウィンドウステーションも無いので、
+# テストはコンソールアプリ (kvc_tests) だけを実行する。
+# GUI アプリはビルドの成否だけを見る。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  JUCE_TAG: 8.0.15
+
+jobs:
+  windows:
+    name: Windows / MSVC
+    # windows-latest は GitHub 側で更新される。CMakeLists は世代を固定していない
+    # （VS2019 指定は開発機の都合で、CI では既定のジェネレータで通る）ので追随してよい。
+    runs-on: windows-latest
+
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      # JUCE は約 700 MB あるので毎回クローンすると CI が遅い。
+      # タグ固定なのでキャッシュキーもタグそのままでよい。
+      - name: JUCE のキャッシュを復元
+        id: juce-cache
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ env.JUCE_TAG }}
+
+      - name: JUCE を取得
+        if: steps.juce-cache.outputs.cache-hit != 'true'
+        run: >
+          git clone --branch ${{ env.JUCE_TAG }} --depth 1
+          https://github.com/juce-framework/JUCE.git external/JUCE
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -A x64
+          -DKVC_BUILD_TESTS=ON
+          -DKVC_ENABLE_ASIO=ON
+          -DKVC_ENABLE_VST2=ON
+
+      - name: DSP テストをビルド
+        run: cmake --build build --config Release --target kvc_tests --parallel 4
+
+      - name: DSP テストを実行
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # テストが落ちているのに exe だけ出来ても意味がないので、順番はこの通りにする。
+      - name: アプリをビルド
+        run: cmake --build build --config Release --target KantanVoiceChanger --parallel 4
+
+      - name: exe を成果物として保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: KantanVoiceChanger-windows-x64
+          path: build/KantanVoiceChanger_artefacts/Release/KantanVoiceChanger.exe
+          if-no-files-found: error

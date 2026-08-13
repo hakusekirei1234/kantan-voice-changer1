@@ -15,8 +15,11 @@ namespace
 {
     constexpr float kPi = 3.14159265358979323846f;
 
-    /** 相関探索の上限（48 kHz サンプル）。先読み予算を直接食うので T0/4 より優先して抑える。 */
-    constexpr int kSearchCap = 96;
+    /** 相関探索の上限（48 kHz サンプル）。
+        探索は「T0 の丸め誤差を直す」ためだけのもので、参照は毎回 lastMark に取り直すので
+        誤差は 1 グレインぶんしか溜まらない。未来向きの探索はそのまま先読み予算を食うため、
+        v1.0.0 の 96 から 32 へ詰めた。 */
+    constexpr int kSearchCap = 32;
     constexpr int kSearchFloor = 8;
 
     /** 予算の安全マージン。T0 と F はグレイン間で動くので、
@@ -24,8 +27,12 @@ namespace
     constexpr int kBudgetMargin = 16;
 
     constexpr int kMinHalfOut = 8;
-    constexpr int kMaxHalfOutLeft = 2048;     ///< 過去側の上限（リング 8192 に対する安全側）
+    constexpr int kMaxHalfOut = 1024;         ///< 片側の上限（リング 8192 に対する安全側）
     constexpr int kFineRefine = 3;            ///< 48 kHz での ±3 サンプル追い込み
+
+    /** 1 エポックで解析マークを進められる周期数の上限。
+        T0 の推定が一瞬壊れても、グレインが遠くへ飛ばないための蓋。 */
+    constexpr int kMaxAdvance = 8;
 
     /** 負の絶対位置でも正しく回るリングインデックス。
         int64 の & はビット演算なので、2 の補数のまま剰余として正しく働く。 */
@@ -73,8 +80,8 @@ void PitchFormantShifter::prepare (double newSampleRate, int /*maxBlockSize*/)
 
     tracker.prepare (sampleRate);
 
-    // 0: in48 / 1: outAccum / 2: winAccum / 3: dry（遅延したドライ経路）
-    rings.setSize (4, kRingSize, false, true, false);
+    // 0: in48 / 1: outAccum / 2: dry（遅延したドライ経路）
+    rings.setSize (3, kRingSize, false, true, false);
 
     // 0: 連続化したグレイン素材（最大 hInLeft + hInRight + 4）
     // 1: 窓テーブル（前半 kWindowTableSize = 立上り / 後半 = 立下り）
@@ -106,6 +113,64 @@ void PitchFormantShifter::buildWindowTables() noexcept
         const float c = std::cos (kPi * u * 0.5f);
         table[kWindowTableSize + i] = c * c * std::sqrt (c);
     }
+
+    // OLA のゲインを解析的に出すための平均値。テーブルが変われば自動で追随する。
+    double sumRise = 0.0, sumFall = 0.0;
+
+    for (int i = 0; i < kWindowTableSize; ++i)
+    {
+        sumRise += table[i];
+        sumFall += table[kWindowTableSize + i];
+    }
+
+    windowMeanRise = static_cast<float> (sumRise / kWindowTableSize);
+    windowMeanFall = static_cast<float> (sumFall / kWindowTableSize);
+}
+
+//==============================================================================
+int64_t PitchFormantShifter::findEpochAnchor (int64_t upTo, float periodSamples) const noexcept
+{
+    const float* const in48 = rings.getReadPointer (0);
+
+    // 窓幅は周期に比例させる。固定 ms にすると、高い声では周期の大半を覆ってしまい
+    // ピークが鈍って位置が決まらない。
+    const int half = juce::jlimit (3, 128, juce::roundToInt (periodSamples * 0.125f));
+    const int span = juce::jlimit (8, kRingSize / 8, juce::roundToInt (periodSamples));
+
+    // 未来側は 1 サンプルも要らない。half ぶんだけは既に書かれている必要がある。
+    const int64_t last = juce::jmin (upTo - 1, writePos48 - half - 1);
+    const int64_t first = last - span + 1;
+
+    if (first - half - 1 < 0 || first - half - 1 < readPos48 - kRingSize + 8 || last <= first)
+        return upTo - 1;
+
+    double energy = 0.0;
+
+    for (int k = -half; k <= half; ++k)
+    {
+        const float s = in48[ringIndex (first + k, kRingMask)];
+        energy += static_cast<double> (s) * static_cast<double> (s);
+    }
+
+    int64_t best = first;
+    double  bestEnergy = energy;
+
+    for (int64_t m = first + 1; m <= last; ++m)
+    {
+        const float added   = in48[ringIndex (m + half, kRingMask)];
+        const float removed = in48[ringIndex (m - half - 1, kRingMask)];
+
+        energy += static_cast<double> (added) * static_cast<double> (added)
+                    - static_cast<double> (removed) * static_cast<double> (removed);
+
+        if (energy > bestEnergy)
+        {
+            bestEnergy = energy;
+            best = m;
+        }
+    }
+
+    return best;
 }
 
 //==============================================================================
@@ -119,6 +184,7 @@ void PitchFormantShifter::reset() noexcept
     nextEpoch  = 0;
     outFrontier = 0;
     lastMark   = 0;
+    markValid  = false;
 
     pitchSmoothedSt   = pitchTargetSt;
     formantSmoothedSt = formantTargetSt;
@@ -155,8 +221,7 @@ void PitchFormantShifter::process (const float* input, float* output, int numSam
 
     float* const in48     = rings.getWritePointer (0);
     float* const outAccum = rings.getWritePointer (1);
-    float* const winAccum = rings.getWritePointer (2);
-    float* const dry      = rings.getWritePointer (3);
+    float* const dry      = rings.getWritePointer (2);
 
     // 入力を先に全部リングへ写す。これで input == output のエイリアシングも成立する。
     for (int i = 0; i < numSamples; ++i)
@@ -177,11 +242,10 @@ void PitchFormantShifter::process (const float* input, float* output, int numSam
     {
         const int k = ringIndex (readPos48 + i, kRingMask);
 
-        const float wet = outAccum[k] / juce::jmax (winAccum[k], kWinAccumFloor);
+        const float wet = outAccum[k];
         const float d   = dry[k];
 
         outAccum[k] = 0.0f;
-        winAccum[k] = 0.0f;
 
         // ドライも同じ先読みぶん遅れているので、この混合で遅延は動かない。
         const float m = wetMix.getNextValue();
@@ -198,7 +262,6 @@ void PitchFormantShifter::synthesiseGrains() noexcept
 {
     const float* const in48     = rings.getReadPointer (0);
     float* const       outAccum = rings.getWritePointer (1);
-    float* const       winAccum = rings.getWritePointer (2);
 
     float* const       seg      = grain.getWritePointer (0);
     const float* const window   = grain.getReadPointer (1);
@@ -242,31 +305,60 @@ void PitchFormantShifter::synthesiseGrains() noexcept
         // 無声区間にピッチ間隔を押し付けない。/s/ /sh/ が金属的になるのを防ぐ。
         const float pEff = juce::jmax (0.25f, 1.0f + v * (P - 1.0f));
 
-        const int Hs = juce::jmax (1, juce::roundToInt (T0 / pEff));
+        // ★v1.0.0 の不具合の核心はここ。
+        //   PSOLA でピッチを動かすのは「解析側と合成側で歩幅を変える」ことだけ:
+        //     解析マークは入力の自然周期 T0 ごと（= 声門エポックの上）に進み、
+        //     出力エポックは Hs = T0 / P_eff ごとに進む。
+        //   出力の周期が Hs になるので F0_out = F0_in * P_eff になる。
+        //   v1.0.0 は解析マークも Hs で進めていた。歩幅が同じ = WSOLA の恒等変換で、
+        //   グレイン内リサンプル（フォルマント）だけが効き、ピッチは一切動かなかった。
+        const int T0i = juce::jmax (2, juce::roundToInt (T0));
+        const int Hs  = juce::jmax (1, juce::roundToInt (T0 / pEff));
 
-        const int searchRange = juce::jlimit (kSearchFloor, kSearchCap, static_cast<int> (T0 * 0.25f));
+        const int searchRange = juce::jlimit (kSearchFloor, kSearchCap, juce::roundToInt (T0 * 0.1f));
 
         //----------------------------------------------------------------------
-        // グレイン形状。
+        // グレイン形状。★長さは「入力側」で前後 T0 ずつと決める。
         //
-        // ★dsp.json からの意図的な逸脱（理由を残す）:
-        //   仕様は前後対称の半長 h = T0*max(1,1/P_eff) だが、それだと 1 グレインに必要な
-        //   先読みが searchRange + hIn + hOut = searchRange + 2*T0 になる。
-        //   200 Hz の声で約 540、120 Hz の男声で約 900 サンプル必要になり、
-        //   LOOKAHEAD=512 では低い声ほどグレインが足りずブツブツになる。
-        //   先読みを消費するのは「未来側」だけなので、窓を非対称にして
-        //   未来側だけ予算に収める。過去側は既にリングにあるので何本使っても遅延は増えない。
-        //   結果、遅延 512 サンプル固定のまま 60 Hz まで破綻しない。
-        const int budgetRight = juce::jmax (16, kLookaheadSamples - searchRange - kBudgetMargin);
+        // 窓は出力格子の上で掛かるが、読む位置は centre + j*F なので、
+        // 実際に切り出している入力長は hOut*F になる。ここを出力側で 2*T0 に決めると、
+        // F > 1 のとき入力長が 2*T0*F になり、隣の声門パルスまでグレインに入る。
+        // 入ったパルスは F 倍に詰まった間隔で並ぶので、フォルマントのつまみが
+        // ピッチを動かしてしまう（v1.0.0 の症状のもう半分）。
+        // 入力側を T0 に固定すれば、隣のパルスはちょうど窓のゼロ点に載って消える。
+        //
+        // P には依らない。P >= 0.5（= -12 半音）までは間隔 Hs <= 2*T0 なので、
+        // 出力窓 2*T0/F と重ね合わせても隙間は空かない（F <= 2*P_eff の範囲で）。
+        //
+        // 先読み予算の根拠:
+        //   出力位置 t を確定するにはエポック t + hOutLeft を合成する必要があり、
+        //   そのためには入力が mark + hInRight まで要る。mark <= エポック + searchRange なので
+        //       hOutLeft + hInRight + searchRange <= LOOKAHEAD
+        //   が守られていれば、グレインの左裾が「既に出力した領域」へはみ出さない。
+        //
+        // ★v1.0.0 は窓を非対称（左 1.5*Hs / 右 0.5*Hs）にして右側だけ予算に収めていたが、
+        //   左裾も同じだけ遅延を食う（出力を確定できない）ことを見落としていた。
+        //   結果 nextEpoch が毎ブロック前へ押し出され、エポック列が成立していなかった。
+        //   予算に収まらない場合は入力長・出力長を同じ比率で縮める。中心が動かないので
+        //   エポックとの位相関係は保たれ、低い声では「短い窓」に劣化するだけで済む。
+        const int budget = juce::jmax (64, kLookaheadSamples - searchRange - kBudgetMargin);
 
-        int hOutLeft = juce::jlimit (kMinHalfOut, kMaxHalfOutLeft, juce::roundToInt (1.5f * static_cast<float> (Hs)));
+        float halfIn = T0;
+        float halfOut = halfIn / juce::jmax (0.1f, F);
 
-        // 過去側の入力長 hOutLeft*F がリングと素材バッファに収まるように抑える。
-        hOutLeft = juce::jmin (hOutLeft, static_cast<int> (static_cast<float> (kMaxHalfOutLeft) / juce::jmax (0.5f, F)));
+        {
+            const float cost = halfOut + halfIn;
 
-        int hOutRight = juce::roundToInt (juce::jmin (0.5f * static_cast<float> (Hs),
-                                                     static_cast<float> (budgetRight) / (1.0f + F)));
-        hOutRight = juce::jmax (kMinHalfOut, hOutRight);
+            if (cost > static_cast<float> (budget))
+            {
+                const float scale = static_cast<float> (budget) / cost;
+                halfIn  *= scale;
+                halfOut *= scale;
+            }
+        }
+
+        const int hOutLeft  = juce::jlimit (kMinHalfOut, kMaxHalfOut, juce::roundToInt (halfOut));
+        const int hOutRight = hOutLeft;
 
         const int hInLeft  = juce::jmax (1, juce::roundToInt (static_cast<float> (hOutLeft)  * F));
         const int hInRight = juce::jmax (1, juce::roundToInt (static_cast<float> (hOutRight) * F));
@@ -278,14 +370,17 @@ void PitchFormantShifter::synthesiseGrains() noexcept
 
         //----------------------------------------------------------------------
         // 必要な入力が揃っているか。揃っていなければ次のブロックへ持ち越す。
-        const int64_t needUpTo = nextEpoch + searchRange + hInRight + 2;
-
-        if (needUpTo > writePos48)
+        // mark <= nextEpoch + searchRange なので、この 1 本で探索の右端まで賄える。
+        if (nextEpoch + searchRange + hInRight + 2 > writePos48)
             break;
 
-        // 出力の確定済み領域へ書き戻さないための保険（リセット直後や極端な設定変更）。
-        if (nextEpoch - hOutLeft < readPos48)
-            nextEpoch = readPos48 + hOutLeft;
+        // 出力が完全に置き去りになったときだけ再アンカーする（リセット直後など）。
+        // 予算が守られていれば通常は成立しない。
+        if (nextEpoch + hOutRight <= readPos48)
+        {
+            nextEpoch = readPos48 + 1;
+            markValid = false;
+        }
 
         //----------------------------------------------------------------------
         // トランジェント検出。直近 3 ms が直前 6 ms の 4 倍を超えたら相関探索をやめ、
@@ -321,23 +416,60 @@ void PitchFormantShifter::synthesiseGrains() noexcept
         }
 
         //----------------------------------------------------------------------
-        // 相関ロック（WSOLA 基準）。参照は「前のグレインの自然な続き」= lastMark + Hs。
-        // 探索窓は過去向きに取る。未来向きに取ると、その長さぶん先読みを余計に食うため。
-        int64_t mark = targetMark;
+        // 解析マークの候補位置。声門エポック列 lastMark + n*T0 の上を進み、
+        // 出力エポックを追い越さない最大の n を採る。
+        //   n == 0  同じ解析グレインをもう一度出す（ピッチを上げたとき）
+        //   n == 1  ふつうに 1 周期ぶん進む
+        //   n >= 2  解析グレインを間引く（ピッチを下げたとき）
+        // 絶対位置から毎回計算し直すので、解析側と合成側の時間がずれ続けることはない。
+        int advance = 1;
+        int64_t markCentre = targetMark;
 
-        if (! transient)
+        if (markValid)
         {
+            advance = static_cast<int> (floorDiv (targetMark - lastMark, T0i));
+            advance = juce::jlimit (0, kMaxAdvance, advance);
+            markCentre = lastMark + static_cast<int64_t> (advance) * T0i;
+        }
+
+        const bool voiced = v >= kUnvoicedVoicing;
+
+        int64_t mark = markCentre;
+
+        if (advance == 0 && markValid && ! transient)
+        {
+            // 複製。同じ場所が最良なので探索する意味がない。
+            mark = lastMark;
+        }
+        else if (voiced)
+        {
+            // ★位相アンカー。毎グレイン、中心を声門閉鎖点に載せ直す。
+            //   markCentre から過去 1 周期の範囲には声門パルスがちょうど 1 つある。
+            //   中心がパルスに載っていれば、隣のパルスはちょうど窓のゼロ点（±T0）に
+            //   来て消える。載っていないと隣のパルスが窓の両端で半分ずつ生き残り、
+            //   ピッチを下げても元の高さが残る（v1.0.0 の症状）。
+            //   相関ロックだけでは「前のグレインとの相対位相」しか保てず、
+            //   最初にずれた位相はそのまま固定されてしまうので、毎回載せ直す。
+            //   探索は過去向きだけなので先読みは 1 サンプルも増えない。
+            mark = findEpochAnchor (markCentre + 1, T0);
+        }
+        else
+        {
+            // 無声区間。エネルギーのピークには意味が無いので相関でつなぐ。
+            // 参照は「前の解析マーク」。
+            // ★ここを出力側の連続性（lastMark + Hs）に取ると WSOLA になり、
+            //   歩幅が合成側に引きずられてピッチが動かなくなる（v1.0.0 の症状）。
             const int corrLen8 = juce::jlimit (12, juce::jmin (refCapacity, 128),
                                                static_cast<int> (T0 / static_cast<float> (decim)));
             const int search8  = juce::jmax (1, searchRange / decim);
 
-            const int64_t refEnd48 = lastMark + Hs;
-            const int64_t refEnd8  = floorDiv (refEnd48, decim);
+            const int64_t refEnd8 = floorDiv (lastMark, decim);
+            const int64_t centre8 = floorDiv (markCentre, decim);
 
             const int64_t oldest8 = tracker.getDecimatedWritePos() - PitchTracker::getDecimatedRingSize() + 8;
 
             if (refEnd8 - corrLen8 >= oldest8
-                && floorDiv (targetMark, decim) - search8 - corrLen8 >= oldest8)
+                && centre8 - search8 - corrLen8 >= oldest8)
             {
                 for (int i = 0; i < corrLen8; ++i)
                     ref8[i] = ring8[ringIndex (refEnd8 - corrLen8 + i, mask8)];
@@ -347,7 +479,7 @@ void PitchFormantShifter::synthesiseGrains() noexcept
 
                 for (int d = -search8; d <= search8; ++d)
                 {
-                    const int64_t candEnd8 = floorDiv (targetMark, decim) + d;
+                    const int64_t candEnd8 = centre8 + d;
 
                     float xy = 0.0f, xx = 0.0f, yy = 0.0f;
 
@@ -371,18 +503,18 @@ void PitchFormantShifter::synthesiseGrains() noexcept
                     }
                 }
 
-                mark = targetMark + static_cast<int64_t> (bestDelta8) * decim;
+                mark = markCentre + static_cast<int64_t> (bestDelta8) * decim;
 
                 // 48 kHz で ±3 サンプル追い込む。8 kHz 格子のままだと 6 サンプル刻みの
                 // 位相ずれが残り、伸ばした母音でわずかにざらつく。
                 const int fineLen = juce::jlimit (32, juce::jmin (refCapacity, 256), static_cast<int> (T0));
 
-                if (mark - fineLen - kFineRefine >= 0 && refEnd48 - fineLen >= 0)
+                if (lastMark - fineLen >= 0 && mark - fineLen - kFineRefine >= 0)
                 {
                     float* const ref48 = prevSeg.getWritePointer (1);
 
                     for (int i = 0; i < fineLen; ++i)
-                        ref48[i] = in48[ringIndex (refEnd48 - fineLen + i, kRingMask)];
+                        ref48[i] = in48[ringIndex (lastMark - fineLen + i, kRingMask)];
 
                     float bestFine = -2.0f;
                     int   bestOffset = 0;
@@ -418,10 +550,10 @@ void PitchFormantShifter::synthesiseGrains() noexcept
             // 無声ぶんのジッタ。周期性を持たない音に規則正しい間隔を与えないため。
             const float jitter = nextJitter (jitterState) * (1.0f - v) * (T0 * 0.125f);
             mark += static_cast<int64_t> (juce::roundToInt (jitter));
-        }
 
-        // 探索とジッタで先読みを踏み越えないように最終クランプ。
-        mark = juce::jlimit (targetMark - searchRange, targetMark + searchRange, mark);
+            // 探索とジッタで候補位置から離れすぎないように最終クランプ。
+            mark = juce::jlimit (markCentre - searchRange, markCentre + searchRange, mark);
+        }
 
         if (mark + hInRight + 2 > writePos48)
             mark = writePos48 - hInRight - 2;
@@ -471,14 +603,33 @@ void PitchFormantShifter::synthesiseGrains() noexcept
         }
 
         //----------------------------------------------------------------------
-        // OLA。窓は「リサンプル後」の出力格子の上で積算する。
-        // 解析的なゲイン補正では任意の h・間隔・F で必ず破綻するため、winAccum で割る。
+        // OLA。窓は「リサンプル後」の出力格子の上に掛ける。
+        //
+        // ★ゲインはグレインごとに解析的に決める（v1.0.0 は出力サンプルごとに
+        //   積算した窓の和 winAccum で割っていた）。
+        //   点ごとに窓の和で割るということは、重なりが薄い場所ほど大きく持ち上げる
+        //   ということで、極端には重なりゼロの場所で outAccum/winAccum = w*x/w = x、
+        //   つまり窓が完全に打ち消される。窓の役目は「隣の声門パルスを ±T0 の
+        //   ゼロ点で消すこと」なので、これが打ち消されると隣のパルスが素通りし、
+        //   -12 半音にしても元の高さがそのまま残る。
+        //   重なり数 = 2*halfOut/Hs は設定で 1〜4 倍まで動くので、
+        //   窓の積分値 / Hs で割れば、どの設定でも平均レベルは 1 に揃う。
+        const float windowSum = static_cast<float> (hOutLeft) * windowMeanRise
+                                    + static_cast<float> (hOutRight) * windowMeanFall;
+
+        const float grainGain = static_cast<float> (Hs) / juce::jmax (1.0f, windowSum);
+
         const float centre = static_cast<float> (hInLeft + 1);
         const float invLeft  = static_cast<float> (kWindowTableSize) / static_cast<float> (hOutLeft);
         const float invRight = static_cast<float> (kWindowTableSize) / static_cast<float> (hOutRight);
 
         for (int j = -hOutLeft; j < hOutRight; ++j)
         {
+            // 既に出力し終えた領域には書かない。書いてもその音は誰も読まず、
+            // リングが一周したときにゴミとして戻ってくるだけ。
+            if (nextEpoch + j < readPos48)
+                continue;
+
             float w;
 
             if (j < 0)
@@ -508,13 +659,13 @@ void PitchFormantShifter::synthesiseGrains() noexcept
 
             const int k = ringIndex (nextEpoch + j, kRingMask);
 
-            outAccum[k] += w * s;
-            winAccum[k] += w;
+            outAccum[k] += grainGain * w * s;
         }
 
         outFrontier = juce::jmax (outFrontier, nextEpoch + hOutRight);
 
         lastMark  = mark;
+        markValid = true;
         nextEpoch += Hs;
     }
 }
